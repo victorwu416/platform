@@ -553,24 +553,24 @@ func LoginByOAuth(c *Context, w http.ResponseWriter, r *http.Request, service st
 	buf := bytes.Buffer{}
 	buf.ReadFrom(userData)
 
-	authData := ""
+	var providerUser *model.User
 	provider := einterfaces.GetOauthProvider(service)
 	if provider == nil {
 		c.Err = model.NewLocAppError("LoginByOAuth", "api.user.login_by_oauth.not_available.app_error",
 			map[string]interface{}{"Service": strings.Title(service)}, "")
 		return nil
 	} else {
-		authData = provider.GetAuthDataFromJson(bytes.NewReader(buf.Bytes()))
+		providerUser = provider.GetUserFromJson(bytes.NewReader(buf.Bytes()))
 	}
 
-	if len(authData) == 0 {
+	if len(*providerUser.AuthData) == 0 {
 		c.Err = model.NewLocAppError("LoginByOAuth", "api.user.login_by_oauth.parse.app_error",
 			map[string]interface{}{"Service": service}, "")
 		return nil
 	}
 
 	var user *model.User
-	if result := <-Srv.Store.User().GetByAuth(&authData, service); result.Err != nil {
+	if result := <-Srv.Store.User().GetByAuth(providerUser.AuthData, service); result.Err != nil {
 		if result.Err.Id == store.MISSING_AUTH_ACCOUNT_ERROR {
 			return CreateOAuthUser(c, w, r, service, bytes.NewReader(buf.Bytes()), "")
 		}
@@ -578,6 +578,15 @@ func LoginByOAuth(c *Context, w http.ResponseWriter, r *http.Request, service st
 		return nil
 	} else {
 		user = result.Data.(*model.User)
+
+		if user.Username != providerUser.Username {
+			user.Username = providerUser.Username
+			if result := <-Srv.Store.User().Update(user, false); result.Err != nil {
+				c.Err = result.Err
+				return nil
+			}
+		}
+
 		doLogin(c, w, r, user, "")
 		if c.Err != nil {
 			return nil
