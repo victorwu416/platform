@@ -104,6 +104,10 @@ export default class PostList extends React.Component {
     }
 
     isAtBottom() {
+        if (!this.refs.postList) {
+            return false;
+        }
+
         // consider the view to be at the bottom if it's within this many pixels of the bottom
         const atBottomMargin = 10;
 
